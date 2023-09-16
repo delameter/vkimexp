@@ -1,0 +1,34 @@
+#🌱 NEW: 
+#🐞 FIX: 
+#💎 REFACTOR: 
+
+#🔩 ADJUST: 
+#🙈 BULK: 
+#🍒 CHERRYPICK: 
+#♻️  CI/CD: 
+#⌛ DRAFT: 
+#📙 DOCS: 
+#🚧 INIT
+#⛔ LOCAL:
+#🔧 MAINTAIN: 
+#🚀 RELEASE: 
+#❌ REMOVAL: 
+#💡 RESEARCH: 
+#💥 REWORK: 
+#🔨 SQUASH: [00] 
+#🆙 UPDATE: 
+#⏫ UPGRADE: 
+#🧪 TESTS: 
+
+# closes #00
+
+
+##-----------------------------------------------------------------------------
+#@ es7s/gitmessage        rev. 16        es7s projects commit message templates
+## Jul-2022                                 A. Shavykin <0.delameter@gmail.com>
+##-----------------------------------------------------------------------------
+## To make git use new commit template run (in repo's directory):
+##
+##    curl -s https://es7s.dlup.link/gitmessage > .gitmessage
+##    git config --add commit.template .gitmessage
+##_____________________________________________________________________________

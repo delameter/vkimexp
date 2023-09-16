@@ -1,0 +1,46 @@
+.page_post_thumb_wrap {
+    display: inline-block;
+}
+li {
+    list-style: none;
+}
+.im-mess-stack {
+    display: flex;
+    border-top: 1px dotted gray;
+    padding-block: .5em;
+}
+.im-mess-stack--info {
+    margin-left: 0.5em;
+}
+.im-mess-stack--mess {
+    margin: 0.5em;
+    padding: 0;
+}
+.im-mess-stack--tools {
+    font-size: 0.7rem;
+}
+.page_post_sized_thumbs {
+    display: inline;
+}
+
+.im-replied,
+.im-mess-stack_fwd {
+    padding: .5em;
+    background-color: rgba(0,0,0,.05);
+    margin-left: .5em;
+}
+
+.im-mess-stack_fwd  {
+    margin-bottom: 1em;
+}
+.blind_label {
+    font-size: .8rem;
+}
+
+h5.im-page--history-new-bar {
+    font-size: 1rem;
+    padding: .5em;
+    background-color: rgba(0,0,0,0.05);
+    border-top: 1px solid gray;
+    margin: 0;
+}

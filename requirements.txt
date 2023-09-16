@@ -1,0 +1,19 @@
+beautifulsoup4==4.12.2
+Brotli==1.1.0
+bs4==0.0.1
+certifi==2023.7.22
+cffi==1.15.1
+charset-normalizer==3.2.0
+cryptography==41.0.3
+idna==3.4
+jeepney==0.8.0
+mutagen==1.47.0
+pycparser==2.21
+pycryptodomex==3.18.0
+pytermor @ git+ssh://git@github.com/delameter/pytermor@583c300645a11d4fde535c3b43c2698b4d7e4c50
+requests==2.31.0
+SecretStorage==3.3.3
+soupsieve==2.5
+urllib3==2.0.4
+websockets==11.0.3
+yt-dlp==2023.7.6
