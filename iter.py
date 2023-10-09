@@ -2,6 +2,7 @@ import json
 import math
 import operator
 import re
+import shutil
 import urllib.parse
 from abc import abstractmethod, ABCMeta
 from datetime import datetime
@@ -33,7 +34,7 @@ class ImExporter:
     HTML_HEAD = f'<html>' \
                 f'<head>' \
                 f'<meta charset="utf-8">' \
-                f'<link rel="stylesheet" type="text/css" href="../default.css">' \
+                f'<link rel="stylesheet" type="text/css" href="default.css">' \
                 f'</head>' \
                 f'<body>'
 
@@ -126,6 +127,7 @@ class ImExporter:
 
             sleep(0.05)
 
+        shutil.copy(self.OUT_DIR / 'default.css', self._out_dir / 'default.css')
         self._finalize_out_rendered()
         print(f'\nDone, {fmt_num(index_count)} in index, {fmt_num(rendered_count)} rendered')
 
