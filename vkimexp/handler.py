@@ -1,3 +1,8 @@
+# ------------------------------------------------------------------------------
+#  vkimexp [VK dialogs exporter]
+#  (c) 2023 A. Shavykin <0.delameter@gmail.com>
+# ------------------------------------------------------------------------------
+
 import json
 import operator
 import os.path

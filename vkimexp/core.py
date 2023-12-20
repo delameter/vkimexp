@@ -1,7 +1,12 @@
-import logging
+# ------------------------------------------------------------------------------
+#  vkimexp [VK dialogs exporter]
+#  (c) 2023 A. Shavykin <0.delameter@gmail.com>
+# ------------------------------------------------------------------------------
+
+import importlib
+import importlib.resources
 import math
 import os
-import shutil
 from time import sleep
 
 import click
@@ -14,11 +19,9 @@ from .writer import *
 
 
 class Task:
-    MAX_INIT_ATTEMPTS = 10
-
-    def __init__(self, clctx: click.Context, peer_id: int):
-        self._ctx = Context(peer_id)
-        self._auth = Auth(clctx.params.get("browser"))
+    def __init__(self, clctx: click.Context, peer_id: int, attempt: int):
+        self._ctx = Context(clctx, peer_id, attempt)
+        self._auth = Auth(self._ctx)
 
         os.makedirs(self._ctx.out_dir, exist_ok=True)
 
@@ -42,23 +45,15 @@ class Task:
             AudioMsgsHandler(self._ctx),
         ]
 
-    def run(self) -> None:
+    def run(self) -> bool:
         get_logger().info(f"Starting to process PEER {self._ctx.peer_id}")
 
-        last_page_data = None
-        attempts = 0
-        while last_page_data is None:
-            try:
-                _, data, size = self._fetch_im_data()
-                last_page_data = [*self._handle_response_data(data)]
-            except RuntimeError as e:
-                if attempts < self.MAX_INIT_ATTEMPTS:
-                    attempts += 1
-                    self._printer.print_init_attempt(attempts)
-                    sleep(math.log(attempts, 1.2))
-                    continue
-                get_logger().error(e)
-                return
+        try:
+            _, data, size = self._fetch_im_data(first=True)
+            last_page_data = [*self._handle_response_data(data)]
+        except RuntimeError as e:
+            get_logger().error(e)
+            return False
 
         max_page = -1
         if max_idx := max([dto.msg_idx for dto in last_page_data] + [0]):
@@ -112,11 +107,11 @@ class Task:
             sleep(0.05)
 
         try:
-            src_css = self._ctx.out_dir_root / 'default.css'
+            src_css = importlib.resources.read_text('vkimexp.data', 'default.css')
             dst_css = self._ctx.out_dir / 'default.css'
             if not os.path.exists(dst_css):
-                # os.symlink(src_css, dst_css)
-                shutil.copy(src_css, dst_css)
+                with open(dst_css, 'xt') as dst_f:
+                    dst_f.write(src_css)
         except Exception as e:
             get_logger().exception(e)
 
@@ -127,10 +122,10 @@ class Task:
             get_logger().error(f"Request at offset {offset} failed: {failed_req_err}")
 
         self._printer.print_footer()
+        return True
 
-    def _fetch_im_data(self, offset: int = 0) -> tuple[str, dict, int]:
-        response = requests.get(
-            URL,
+    def _fetch_im_data(self, offset: int = 0, first: bool = False) -> tuple[str, dict, int]:
+        request_attributes = dict(
             params={
                 "act": "a_history",
                 "al": 1,
@@ -141,7 +136,6 @@ class Task:
                 "toend": 0,
                 "whole": 0,
             },
-            cookies=self._auth.cookies,
             headers={
                 "authority": "vk.com",
                 "accept": "*/*",
@@ -161,7 +155,13 @@ class Task:
                 "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
                 "x-requested-with": "XMLHttpRequest",
             },
+            cookies=self._auth.cookies,
         )
+        if first:
+            get_logger().debug(request_attributes)
+
+        response = requests.get(URL, **request_attributes)
+
         if not response.ok:
             raise RuntimeError(f"Failed to get IM data (HTTP {response.status_code})")
         get_logger().debug(f"GET {URL}: HTTP {response.status_code}")
@@ -193,7 +193,7 @@ class Task:
         if not data:
             return
         if not isinstance(data, dict):
-            raise RuntimeError(f"Expected JSON object response, got: {data!r}")
+            raise RuntimeError(f"Auth failed: expected JSON object response, got: {data!r}. Are you logged in?")
         for _, msg in data.items():
             msg_id, flags, _2, ts, text, attach, _6, _7, num, *_ = msg
             inbox = not bool(flags & 2)

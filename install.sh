@@ -1,4 +1,8 @@
 #!/bin/sh
+#-------------------------------------------------------------------------------
+# vkimexp [VK dialogs exporter]
+# (c) 2023 A. Shavykin <0.delameter@gmail.com>
+#-------------------------------------------------------------------------------
 
 python3.12 -m venv venv --clear
 ./venv/bin/pip install -r requirements.txt

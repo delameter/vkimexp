@@ -1,3 +1,8 @@
+# ------------------------------------------------------------------------------
+#  vkimexp [VK dialogs exporter]
+#  (c) 2023 A. Shavykin <0.delameter@gmail.com>
+# ------------------------------------------------------------------------------
+
 import enum
 import logging
 import os
@@ -7,6 +12,7 @@ from logging import Logger as BaseLogger, FileHandler, StreamHandler
 from pathlib import Path
 from threading import Lock
 
+import click
 from bs4 import BeautifulSoup
 from urllib3.util import parse_url
 
@@ -64,9 +70,12 @@ class Totals:
 class Context:
     _OUT_DIR = Path(__file__).parent.parent / 'out'
 
-    def __init__(self, peer_id: int):
+    def __init__(self, clctx: click.Context, peer_id: int, attempt: int):
+        self.browser: str = clctx.params.get("browser")
+        self.verbose: int = clctx.params.get("verbose")
         self.peer_id: int = peer_id
-        self.out_dir = self._OUT_DIR / str(self.peer_id)
+        self.attempt: int = attempt
+        self.out_dir: Path = self._OUT_DIR / str(self.peer_id)
 
         self.totals = Totals()
         self.peer_name_map = PeerNameMap()

@@ -1,4 +1,10 @@
-import logging.handlers
+# ------------------------------------------------------------------------------
+#  vkimexp [VK dialogs exporter]
+#  (c) 2023 A. Shavykin <0.delameter@gmail.com>
+# ------------------------------------------------------------------------------
+
+import math
+from time import sleep
 
 import click
 from yt_dlp import SUPPORTED_BROWSERS
@@ -6,12 +12,14 @@ from yt_dlp import SUPPORTED_BROWSERS
 from .common import init_logging, get_logger
 from .core import Task
 
+MAX_INIT_ATTEMPTS = 10
+
 
 @click.command(no_args_is_help=True)
 @click.argument("peers", nargs=-1, required=True, type=click.STRING)
 @click.option("-b", "--browser", metavar="NAME", type=click.Choice(SUPPORTED_BROWSERS), default='chrome',
-              show_default=True, help="Browser to use cookies from (process is automatic).")
-@click.option("-v", "--verbose", count=True, type=click.IntRange(0, 1, clamp=True))
+              show_default=True, help="Browser to load cookies from (process is automatic).")
+@click.option("-v", "--verbose", count=True, help="Print more details.")
 @click.pass_context
 def entrypoint(clctx: click.Context, peers: list[str], verbose: int, **kwargs):
     """
@@ -38,10 +46,12 @@ def entrypoint(clctx: click.Context, peers: list[str], verbose: int, **kwargs):
     peer_ids = [_normalize_peer_id(p) for p in peers]
     init_logging(verbose)
 
-    for peer_id in peer_ids:
-        task = Task(clctx, peer_id)
+    result = False
+    attempt = 0
+    while peer_ids:
+        task = Task(clctx, peer_ids[0], attempt)
         try:
-            task.run()
+            result = task.run()
         except Exception as e:
             if verbose:
                 get_logger().exception(e)
@@ -49,6 +59,16 @@ def entrypoint(clctx: click.Context, peers: list[str], verbose: int, **kwargs):
                 get_logger().error(e)
         finally:
             task.close()
+
+        if result:
+            peer_ids.pop(0)
+            attempt = 0
+        else:
+            attempt += 1
+            if attempt >= MAX_INIT_ATTEMPTS:
+                get_logger().error("Max attempts amount reached, terminating")
+                break
+            _sleep(attempt)
 
 
 def _normalize_peer_id(peer: str) -> int:
@@ -60,3 +80,9 @@ def _normalize_peer_id(peer: str) -> int:
         return peer
     except ValueError:
         raise RuntimeError(f"Invalid PEER format: {peer}, run 'vkimexp --help' for the details")
+
+
+def _sleep(attempt: int):
+    delay = math.log(attempt+1, 1.2)
+    get_logger().warning(f"Attempt {attempt+1}/{MAX_INIT_ATTEMPTS}, will retry in {delay:.1f} seconds...")
+    sleep(delay)

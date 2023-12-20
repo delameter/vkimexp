@@ -7,16 +7,26 @@ name = "vkimexp"
 dynamic = ["version", "dependencies"]
 description = "VK messages/history export"
 readme = "README.md"
-license = "LGPL-3.0"
+license = "MIT"
 requires-python = ">=3.12"
-keywords = []
+keywords = ["cli", "vk", "message", "export", "conversation"]
 authors = [
     { name = "Aleksandr Shavykin", email = "0.delameter@gmail.com" },
 ]
-classifiers = []
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 
 [project.scripts]
 vkimexp = "vkimexp.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/delameter/vkimexp"
 
 # ---------------------------------------------------------
 
