@@ -1,36 +1,58 @@
 import json
+import logging.handlers
 import math
 import operator
+import os.path
 import re
 import shutil
-import urllib.parse
+import typing as t
 from abc import abstractmethod, ABCMeta
+from dataclasses import dataclass
 from datetime import datetime
-import logging.handlers
-import os.path
-import sys
 from json import JSONDecodeError
 from pathlib import Path
 from time import sleep
 
-import urllib3.util
-from bs4 import BeautifulSoup, PageElement, Tag
+import click
 import pytermor as pt
-import typing as t
-
 import requests
+import urllib3.util
 import yt_dlp
-from requests import Response
+from bs4 import BeautifulSoup
+from click import command, option, argument
+
+PAGE_SIZE = 100
+URL = "https://vk.com/al_im.php"
+HOST = (u := urllib3.util.parse_url(URL)).scheme + '://' + u.host
+
+OUT_DIR = Path(__file__).parent / 'out'
+RENDERED_MSG_PAGE_LIMIT = 1000
 
 
+class Counter:
+    def __init__(self, default: int = 0):
+        self._value: int = default
+
+    def increment(self, times: int = 1):
+        assert times >= 0
+        self._value += times
+
+    def __int__(self):
+        return self._value
+
+
+@dataclass(frozen=True)
+class Totals:
+    msg_indexed: Counter = Counter()
+    msg_rendered: Counter = Counter()
+    attach_found: Counter = Counter()
+    attach_downloaded: Counter = Counter()
+
+
+@command()
+@argument("peer", type=click.INT)
+@option("-v", "--verbose", count=True)
 class ImExporter:
-    PAGE_SIZE = 100
-    URL = "https://vk.com/al_im.php"
-    HOST = (u := urllib3.util.parse_url(URL)).scheme + '://' + u.host
-
-    OUT_DIR = Path(__file__).parent / 'out'
-    RENDERED_MSG_PAGE_LIMIT = 1000
-
     HTML_HEAD = f'<html>' \
                 f'<head>' \
                 f'<meta charset="utf-8">' \
@@ -38,13 +60,18 @@ class ImExporter:
                 f'</head>' \
                 f'<body>'
 
-    def __init__(self, peer: int):
+    def __init__(self, peer: int, verbose: int):
         self._peer = peer
 
-        cookiejar = yt_dlp.cookies.extract_cookies_from_browser("chrome", "Profile 1")
-        self._cookies = {c.name: c.value for c in cookiejar.get_cookies_for_url(self.URL)}
+        if verbose:
+            logging.getLogger().setLevel(logging.DEBUG)
 
-        self._out_dir = self.OUT_DIR / str(peer)
+        cookiejar = yt_dlp.cookies.extract_cookies_from_browser("chrome", "Profile 1")
+        #cookiejar = yt_dlp.cookies.extract_cookies_from_browser("firefox")
+        self._cookies = {c.name: c.value for c in cookiejar.get_cookies_for_url(URL)}
+        logging.debug(f"Extracted cookies: {len(self._cookies)}")
+
+        self._out_dir = OUT_DIR / str(peer)
         os.makedirs(self._out_dir, exist_ok=True)
 
         self._nums_rcvd = set()
@@ -57,48 +84,58 @@ class ImExporter:
 
         self._out_rendered_msg_count = 0
         self._out_rendered: list[t.TextIO] = []
+        self._totals = Totals()
 
-        self._photos_handler = PhotosHandler(self._out_dir)
-        self._audiomsgs_handler = AudioMsgsHandler(self._out_dir)
-        self._images_handler = ImagesHandler(self._out_dir)
+        self._photos_handler = PhotosHandler(self._out_dir, self._totals)
+        self._audiomsgs_handler = AudioMsgsHandler(self._out_dir, self._totals)
+        self._images_handler = ImagesHandler(self._out_dir, self._totals)
 
-    def run(self) -> None:
+        try:
+            self._run()
+        except RuntimeError as e:
+            logging.exception(e)
+        finally:
+            self._close()
+
+    def _run(self) -> None:
         index_count = 0
         rendered_count = 0
 
         try:
-            print(f'Querying last page', end='         ')
-            _, data = self._fetch_im_data()
+            print(f'Querying last page…', end='')
+            _, data, size = self._fetch_im_data()
             nums = [*(num for num, *_ in self._handle_response_data(data))]
             max_num = max(nums or [0])
-
         except RuntimeError as e:
             logging.exception(e)
             return
 
         max_num_len = len(str(max_num))
-        fmt_num = lambda n='', fn=str.rjust: fn(str(n), max_num_len)
+        fmt_num = lambda n='', fn=str.rjust: fn(str(n), max(2, max_num_len))
 
         if max_num:
-            max_page = math.ceil(max_num // self.PAGE_SIZE)
+            max_page = math.ceil(max_num // PAGE_SIZE)
         else:
             max_page = -1
-        max_page_len = len(str(max_page))
+        max_page_len = len(str(max(0, max_page)))
         fmt_page = lambda p='': str(p).rjust(max_page_len)
 
-        print(f'{fmt_num(max_num)} messages', end='')
+        print(" "*(max_num_len+max_page_len), end='')
+        print(pt.format_bytes_human(size).rjust(6), end='b')
+        print(f'  {fmt_num(max_num)} messages')
+        self._print_sep()
 
         for page in range(max_page, -2, -1):
             # page -1 is the last one, without an offset
 
-            offset = (page * self.PAGE_SIZE) + 30
+            offset = (page * PAGE_SIZE) + 30
             if offset < 0:
                 offset = 0
             print(f'\nReq {fmt_page(max_page-page+1)}/{fmt_page(max_page+2)}'
                   f'  offset {fmt_num(offset)}…', end=' ')
 
             try:
-                rendered, data = self._fetch_im_data(offset)
+                rendered, data, size = self._fetch_im_data(offset)
                 soup = BeautifulSoup(rendered, features='html.parser')
 
                 rendered_count_cur = self._filter_rendered_duplicates(soup)
@@ -110,6 +147,8 @@ class ImExporter:
 
                 extra_count = rendered_count_cur - index_count_cur
                 extra_str = fmt_num(['', f'+{extra_count}'][extra_count > 0], str.ljust)
+
+                print(pt.format_bytes_human(size).rjust(6), end='b  ')
                 print(f'{fmt_num(index_count_cur)}{extra_str}', end='  ')
 
                 self._images_handler.handle(soup)
@@ -117,8 +156,8 @@ class ImExporter:
                 self._audiomsgs_handler.handle(soup)
                 self._append_rendered(soup, offset, rendered_count_cur)
 
-                index_count += index_count_cur
-                rendered_count += rendered_count_cur
+                self._totals.msg_indexed.increment(index_count_cur)
+                self._totals.msg_rendered.increment(rendered_count_cur)
 
             except RuntimeError as e:
                 print()
@@ -127,13 +166,19 @@ class ImExporter:
 
             sleep(0.05)
 
-        shutil.copy(self.OUT_DIR / 'default.css', self._out_dir / 'default.css')
+        shutil.copy(OUT_DIR / 'default.css', self._out_dir / 'default.css')
         self._finalize_out_rendered()
-        print(f'\nDone, {fmt_num(index_count)} in index, {fmt_num(rendered_count)} rendered')
 
-    def _fetch_im_data(self, offset: int = 0) -> tuple[str, dict]:
+        print()
+        self._print_sep()
+        print()
+        print(f'   Messages (indexed/rendered):   {int(self._totals.msg_indexed)}/{int(self._totals.msg_rendered)}')
+        print(f'Attachments (handled/dnloaded):   {int(self._totals.attach_found)}/{int(self._totals.attach_downloaded)}')
+        print(f'    Results saved to directory:   {self._out_dir!s}')
+
+    def _fetch_im_data(self, offset: int = 0) -> tuple[str, dict, int]:
         response = requests.get(
-            self.URL,
+            URL,
             params={
                 "act": "a_history",
                 "al": 1,
@@ -167,13 +212,12 @@ class ImExporter:
         )
         if not response.ok:
             raise RuntimeError(f"Failed to get IM data (HTTP {response.status_code})")
-        print(pt.format_si_binary(len(response.text), 'B').rjust(10), end='   ')
 
         try:
             rendered, data, *_ = response.json()['payload'][1]
-            return rendered, data
+            return rendered, data, len(response.text)
         except KeyError:
-            raise RuntimeError(f"Failed to read payload: {j:.1000s}")
+            raise RuntimeError(f"Failed to read payload: {response.json():.1000s}")
 
     def _filter_rendered_duplicates(self, soup: BeautifulSoup) -> int:
         count = 0
@@ -193,7 +237,7 @@ class ImExporter:
 
     def _append_rendered(self, soup: BeautifulSoup, offset: int, rendered_count_cur: int) -> None:
         self._out_rendered_msg_count += rendered_count_cur
-        if self._out_rendered_msg_count > self.RENDERED_MSG_PAGE_LIMIT or not len(self._out_rendered):
+        if self._out_rendered_msg_count > RENDERED_MSG_PAGE_LIMIT or not len(self._out_rendered):
             self._out_rendered_msg_count = rendered_count_cur
             self._out_rendered.append(open(self._out_dir / f'rendered{len(self._out_rendered)+1}.html', 'wt'))
             self._out_rendered[-1].write(self.HTML_HEAD)
@@ -214,7 +258,7 @@ class ImExporter:
         if not data:
             return
         if not isinstance(data, dict):
-            raise RuntimeError(f"Invalid response: {data!r}")
+            raise RuntimeError(f"Expected JSON object response, got: {data!r}")
         for _, msg in data.items():
             msg_id, _1, _2, ts, text, attach, _6, _7, num, *_ = msg
             attach_count = int(attach.get('attach_count', 0))
@@ -235,7 +279,10 @@ class ImExporter:
         self._index_file.flush()
         return True
 
-    def close(self) -> None:
+    def _print_sep(self):
+        print('-'*min(80, pt.get_terminal_width()), end='')
+
+    def _close(self) -> None:
         for out_ren in self._out_rendered:
             out_ren.close()
 
@@ -243,8 +290,9 @@ class ImExporter:
 class Downloader(metaclass=ABCMeta):
     COUNTER_COMPACT_THRESHOLD = 10
 
-    def __init__(self, out_dir: Path):
+    def __init__(self, out_dir: Path, totals: Totals):
         self._out_dir = out_dir
+        self._totals = totals
         os.makedirs(self._get_out_subdir(), exist_ok=True)
 
         self._counter_max = 0
@@ -268,7 +316,7 @@ class Downloader(metaclass=ABCMeta):
     def _preupdate_counter(self) -> None:
         if self._is_compact_counter:
             return
-        print('*', end='')
+        print('*', end='', flush=True)
 
     def _update_counter(self, counter: int|None) -> None:
         letter = self._get_type()[0].upper()
@@ -277,15 +325,17 @@ class Downloader(metaclass=ABCMeta):
             width = len(str(self._counter_max))
             if counter is not None:
                 print('\b'*(width + 3), end='')
-            print(f'{counter or 0:>{width}d}×{letter} ', end='')
+            print(f'{counter or 0:>{width}d}×{letter} ', end='', flush=True)
             return
 
         if counter is None:
             return
 
-        print('\b'+letter, end='')
+        print('\b'+letter, end='', flush=True)
 
     def _download(self, url: str) -> Path:
+        self._totals.attach_found.increment()
+
         remote_path = urllib3.util.parse_url(url).path
         basename = os.path.basename(remote_path)
         if len(basename) < 10:
@@ -298,13 +348,14 @@ class Downloader(metaclass=ABCMeta):
         try:
             response = requests.get(url)
         except requests.exceptions.MissingSchema:
-            response = requests.get(ImExporter.HOST + url)
+            response = requests.get(HOST + url)
 
         if not response.ok:
             raise RuntimeError(f"Failed to download {self._get_type()} (HTTP {response.status_code}): {url}")
 
         with open(local_abs_path, 'wb') as f:
             f.write(response.content)
+        self._totals.attach_downloaded.increment()
         return local_abs_path
 
 
@@ -369,6 +420,8 @@ class PhotosHandler(Downloader):
         return 'photo'
 
     def _download(self, url: str, thumb=False) -> Path:
+        self._totals.attach_found.increment()
+
         remote_path = urllib3.util.parse_url(url).path
         basename = os.path.basename(remote_path)
         if thumb:
@@ -385,6 +438,8 @@ class PhotosHandler(Downloader):
 
         with open(local_abs_path, 'wb') as f:
             f.write(response.content)
+
+        self._totals.attach_downloaded.increment()
         return local_abs_path
 
 
@@ -451,16 +506,4 @@ class ImagesHandler(Downloader):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(f'USAGE:\n    {sys.argv[0]} PEER_ID')
-        exit(1)
-
-    try:
-        peer_id = int(sys.argv[1])
-    except ValueError:
-        print("PEER_ID should be an integer")
-        exit(1)
-
-    exp = ImExporter(peer=peer_id)
-    exp.run()
-    exp.close()
+    ImExporter()
