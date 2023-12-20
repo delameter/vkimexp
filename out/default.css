@@ -1,20 +1,39 @@
+body {
+    font-family: "Finlandica", sans-serif;
+}
+a {
+    color: #407191;
+}
+/** dark: saddlebrown **/
 .page_post_thumb_wrap {
     display: inline-block;
+    background-size: contain;
+    border: 1px dotted gray;
 }
 li {
     list-style: none;
 }
 .im-mess-stack {
     display: flex;
-    border-top: 1px dotted gray;
+    max-width: 800px;
     padding-block: .5em;
+}
+.im-mess-stack--photo img {
+    border-radius: 50%;
 }
 .im-mess-stack--info {
     margin-left: 0.5em;
 }
 .im-mess-stack--mess {
-    margin: 0.5em;
+    margin: 0.25em 0.5em;
     padding: 0;
+    gap: .5em;
+    display: flex;
+    flex-direction: column;
+}
+.im-replied--author a,
+.im-mess-stack--pname a {
+    text-decoration: none;
 }
 .im-mess-stack--tools {
     font-size: 0.7rem;
@@ -43,4 +62,30 @@ h5.im-page--history-new-bar {
     background-color: rgba(0,0,0,0.05);
     border-top: 1px solid gray;
     margin: 0;
+}
+
+.im-mess--reactions * img {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+}
+.im-mess--reactions {
+    display: flex;
+}
+.im-mess--reactions > * {
+    background-color: rgba(0,0,0,0.05);
+    padding: .25em;
+    display: flex;
+    gap: .25em;
+}
+.im-mess--reactions button {
+    display: none;
+}
+
+.audio_row__play_btn,
+.audio_row__counter,
+.audio_row__cover_icon,
+.audio_row__cover_back,
+button._audio_row__play_btn {
+    display: none;
 }

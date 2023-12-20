@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling", "hatch-requirements-txt"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vkimexp"
+dynamic = ["version", "dependencies"]
+description = "VK messages/history export"
+readme = "README.md"
+license = "LGPL-3.0"
+requires-python = ">=3.12"
+keywords = []
+authors = [
+    { name = "Aleksandr Shavykin", email = "0.delameter@gmail.com" },
+]
+classifiers = []
+
+[project.scripts]
+vkimexp = "vkimexp.__main__:main"
+
+# ---------------------------------------------------------
+
+[tool.hatch.publish.index]
+disable = true
+
+[tool.hatch.build.targets.sdist]
+packages = ["vkimexp"]
+
+[tool.hatch.version]
+path = "vkimexp/_version.py"
+
+[tool.hatch.metadata.hooks.requirements_txt]
+files = ["requirements.txt"]
+
+[tool.hatch.envs.default.scripts]
+version = "python -m vkimexp --version"
+
+[tool.hatch.envs.build]
+detached = false
+extra-dependencies = [
+    "build~=0.8",
+    "twine~=4.0",
+]
+
+[tool.hatch.envs.dev]
+detached = false
+extra-dependencies = [
+    "pydeps",
+]
