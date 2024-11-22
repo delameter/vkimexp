@@ -1,6 +1,6 @@
 # ------------------------------------------------------------------------------
 #  vkimexp [VK dialogs exporter]
-#  (c) 2023 A. Shavykin <0.delameter@gmail.com>
+#  (c) 2023-2024 A. Shavykin <0.delameter@gmail.com>
 # ------------------------------------------------------------------------------
 
 import enum
@@ -18,15 +18,17 @@ from urllib3.util import parse_url
 
 DOMAIN = "vk.com"
 URL = "https://" + DOMAIN + "/al_im.php"
-HOST = (lambda u=parse_url(URL): u.scheme + '://' + u.host)()
+HOST = (lambda u=parse_url(URL): u.scheme + "://" + u.host)()
 
 PAGE_SIZE = 100
 
 
-class DownloadError(Exception): ...
+class DownloadError(Exception):
+    ...
 
 
-class MessageHandleError(Exception): ...
+class MessageHandleError(Exception):
+    ...
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,9 @@ class Counter:
     def __int__(self):
         return self._value
 
+    def __str__(self):
+        return str(self.value)
+
     @property
     def value(self) -> int:
         return self._value
@@ -68,7 +73,7 @@ class Totals:
 
 
 class Context:
-    _OUT_DIR = Path(__file__).parent.parent / 'out'
+    _OUT_DIR = Path(__file__).parent.parent / "out"
 
     def __init__(self, clctx: click.Context, peer_id: int, attempt: int):
         self.browser: str = clctx.params.get("browser")
@@ -96,16 +101,16 @@ class Context:
 
     @staticmethod
     def get_logs_dir() -> Path:
-        return Context._OUT_DIR / 'logs'
+        return Context._OUT_DIR / "logs"
 
 
 class PeerNameMap(dict[int, str]):
     def add(self, soup: BeautifulSoup):
-        for mstack in soup.find_all('div', attrs={'class': 'im-mess-stack'}):
+        for mstack in soup.find_all("div", attrs={"class": "im-mess-stack"}):
             try:
-                peer_id = int(mstack['data-peer'])
-                pname_el = mstack.find_next('div', attrs={'class': 'im-mess-stack--pname'})
-                pname = pname_el.find('a').text.strip()
+                peer_id = int(mstack["data-peer"])
+                pname_el = mstack.find_next("div", attrs={"class": "im-mess-stack--pname"})
+                pname = pname_el.find("a").text.strip()
 
                 if self.get(peer_id, None) != pname:
                     get_logger().debug(f"Setting peer name {peer_id} -> {pname!r}")
@@ -132,14 +137,14 @@ def init_logging(verbose: int):
     stderr_hdlr.setLevel(stderr_level)
     logger.addHandler(stderr_hdlr)
 
-    fmt = '[%(levelname)5.5s][%(name)s.%(module)s] %(message)s'
+    fmt = "[%(asctime)s][%(levelname)5.5s][%(name)s.%(module)s] %(message)s"
     file_fmtr = logging.Formatter(fmt)
 
     logs_dir = Context.get_logs_dir()
     os.makedirs(logs_dir, exist_ok=True)
 
-    for suffix, level in zip(('app', 'err'), (logger.level, logging.ERROR)):
-        file_hdlr = FileHandler(logs_dir / f'{time.time():.0f}.{suffix}.log', 'xt')
+    for suffix, level in zip(("app", "err"), (logger.level, logging.ERROR)):
+        file_hdlr = FileHandler(logs_dir / f"{time.time():.0f}.{suffix}.log", "xt")
         file_hdlr.setLevel(level)
         file_hdlr.setFormatter(file_fmtr)
         logger.addHandler(file_hdlr)

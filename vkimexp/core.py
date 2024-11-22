@@ -1,6 +1,6 @@
 # ------------------------------------------------------------------------------
 #  vkimexp [VK dialogs exporter]
-#  (c) 2023 A. Shavykin <0.delameter@gmail.com>
+#  (c) 2023-2024 A. Shavykin <0.delameter@gmail.com>
 # ------------------------------------------------------------------------------
 
 import importlib
@@ -18,6 +18,12 @@ from .printer import StatePrinter
 from .writer import *
 
 
+ImData = tuple[str, dict, int]
+
+AttachmentResult = Path | Exception | None
+AttachmentStorage = dict[str, AttachmentResult]
+
+
 class Task:
     def __init__(self, clctx: click.Context, peer_id: int, attempt: int):
         self._ctx = Context(clctx, peer_id, attempt)
@@ -31,11 +37,13 @@ class Task:
         self._printer = StatePrinter(self._ctx)
 
         self._index_writer = IndexWriter(self._ctx)
+        self._json_writer = JsonWriter(self._ctx)
         self._raw_writer = RawWriter(self._ctx)
         self._html_writer = HtmlWriter(self._ctx)
 
         self._writers = [
             self._index_writer,
+            self._json_writer,
             self._raw_writer,
             self._html_writer,
         ]
@@ -76,7 +84,7 @@ class Task:
 
             try:
                 html, data, size = self._fetch_im_data(offset)
-                soup = BeautifulSoup(html, features='html.parser')
+                soup = BeautifulSoup(html, features="html.parser")
                 self._ctx.peer_name_map.add(soup)
                 self._raw_writer.write(html, data, offset)
 
@@ -85,6 +93,7 @@ class Task:
                 for dto in self._handle_response_data(data):
                     if self._index_writer.write(dto):
                         index_count_cur += 1
+                    self._json_writer.write(dto)
 
                 extra_count = html_count_cur - index_count_cur
                 self._printer.print_post_request(size, index_count_cur, extra_count)
@@ -107,24 +116,25 @@ class Task:
             sleep(0.05)
 
         try:
-            src_css = importlib.resources.read_text('vkimexp.data', 'default.css')
-            dst_css = self._ctx.out_dir / 'default.css'
+            src_css = importlib.resources.read_text("vkimexp.data", "default.css")
+            dst_css = self._ctx.out_dir / "default.css"
             if not os.path.exists(dst_css):
-                with open(dst_css, 'xt') as dst_f:
+                with open(dst_css, "xt") as dst_f:
                     dst_f.write(src_css)
         except Exception as e:
             get_logger().exception(e)
 
-        for attach_idx, attach_res in self._attachment_storage.items():
+        for attach_idx in sorted(self._attachment_storage.keys()):
+            attach_res = self._attachment_storage.get(attach_idx)
             if isinstance(attach_res, Exception):
-                get_logger().error(f"Attachment {attach_idx} failed: {attach_res}")
+                get_logger().error(f"Attachment {attach_idx} load failed: {attach_res}")
         for offset, failed_req_err in self._failed_requests:
             get_logger().error(f"Request at offset {offset} failed: {failed_req_err}")
 
         self._printer.print_footer()
         return True
 
-    def _fetch_im_data(self, offset: int = 0, first: bool = False) -> tuple[str, dict, int]:
+    def _fetch_im_data(self, offset: int = 0, first: bool = False) -> ImData:
         request_attributes = dict(
             params={
                 "act": "a_history",
@@ -167,22 +177,22 @@ class Task:
         get_logger().debug(f"GET {URL}: HTTP {response.status_code}")
 
         try:
-            rendered, data, *_ = response.json()['payload'][1]
+            rendered, data, *_ = response.json()["payload"][1]
             return rendered, data, len(response.text)
         except KeyError:
             raise RuntimeError(f"Failed to read payload: {response.json():.1000s}")
 
     def _delete_duplicates(self, soup: BeautifulSoup) -> int:
         count = 0
-        for li in soup.find_all('li', attrs={'class': 'im-mess'}):
+        for li in soup.find_all("li", attrs={"class": "im-mess"}):
             try:
-                msg_id = int(li['data-msgid'])
+                msg_id = int(li["data-msgid"])
             except ValueError as e:
                 get_logger().warning(f"Message element without ID: {li}")
                 continue
 
             if msg_id in self._seen_msg_ids:
-                li.replace_with('')
+                li.replace_with("")
                 continue
             self._seen_msg_ids.add(msg_id)
             count += 1
@@ -193,33 +203,38 @@ class Task:
         if not data:
             return
         if not isinstance(data, dict):
-            raise RuntimeError(f"Auth failed: expected JSON object response, got: {data!r}. Are you logged in?")
+            raise RuntimeError(
+                f"Auth failed: expected JSON object response, got: {data!r}. "
+                f"Are you logged in? Refresh the page in your browser."
+            )
         for _, msg in data.items():
             msg_id, flags, _2, ts, text, attach, _6, _7, num, *_ = msg
             inbox = not bool(flags & 2)
-            attach_count = int(attach.get('attach_count', 0))
+            attach_count = int(attach.get("attach_count", 0))
             from_peer_id = attach.get("from", None)
 
             dto = MessageDTO(num, ts, text, attach_count, msg_id, attach, inbox, from_peer_id)
             get_logger().debug(repr(dto).rstrip())
             yield dto
 
-    def _attachment_event(self, hdlr: AttachmentHandler, idx: int, event_type: AttachmentEventTypeEnum, res: Path|Exception = None):
+    def _attachment_event(
+        self,
+        hdlr: AttachmentHandler,
+        idx: int,
+        event_type: AttachmentEventTypeEnum,
+        res: Path | Exception = None,
+    ):
         type_letter = hdlr.get_type().upper()[0]
-        attach_idx = f"{self._ctx.offset}:{type_letter}{idx}"
+        attach_idx = f"{self._ctx.offset}/{type_letter}{idx}"
 
         self._attachment_storage[attach_idx] = res
         self._printer.print_attachment(type_letter, attach_idx, event_type)
 
         msg = f"Attachment {attach_idx}: {event_type}"
         if res:
-            msg += f' [{res}]'
+            msg += f" [{res}]"
         get_logger().debug(msg)
 
     def close(self):
         for actor in self._writers:
             actor.close()
-
-
-AttachmentResult = Path|Exception|None
-AttachmentStorage = dict[str, AttachmentResult]

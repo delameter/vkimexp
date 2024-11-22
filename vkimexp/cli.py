@@ -1,6 +1,6 @@
 # ------------------------------------------------------------------------------
 #  vkimexp [VK dialogs exporter]
-#  (c) 2023 A. Shavykin <0.delameter@gmail.com>
+#  (c) 2023-2024 A. Shavykin <0.delameter@gmail.com>
 # ------------------------------------------------------------------------------
 
 import math
@@ -17,8 +17,15 @@ MAX_INIT_ATTEMPTS = 10
 
 @click.command(no_args_is_help=True)
 @click.argument("peers", nargs=-1, required=True, type=click.STRING)
-@click.option("-b", "--browser", metavar="NAME", type=click.Choice(SUPPORTED_BROWSERS), default='chrome',
-              show_default=True, help="Browser to load cookies from (process is automatic).")
+@click.option(
+    "-b",
+    "--browser",
+    metavar="NAME",
+    type=click.Choice(SUPPORTED_BROWSERS),
+    default="chrome",
+    show_default=True,
+    help="Browser to load cookies from (process is automatic).",
+)
 @click.option("-v", "--verbose", count=True, help="Print more details.")
 @click.pass_context
 def entrypoint(clctx: click.Context, peers: list[str], verbose: int, **kwargs):
@@ -54,7 +61,7 @@ def entrypoint(clctx: click.Context, peers: list[str], verbose: int, **kwargs):
             result = task.run()
         except Exception as e:
             if verbose:
-                get_logger().exception(e)
+                get_logger().exception(e, exc_info=e.with_traceback(e.__traceback__))
             else:
                 get_logger().error(e)
         finally:
@@ -73,7 +80,7 @@ def entrypoint(clctx: click.Context, peers: list[str], verbose: int, **kwargs):
 
 def _normalize_peer_id(peer: str) -> int:
     try:
-        if peer.startswith('c'):
+        if peer.startswith("c"):
             return 2000000000 + int(peer[1:])
         peer = int(peer)
         assert peer > 0, f"PEER should be > 0, got: {peer}"
@@ -83,6 +90,6 @@ def _normalize_peer_id(peer: str) -> int:
 
 
 def _sleep(attempt: int):
-    delay = math.log(attempt+1, 1.2)
+    delay = math.log(attempt + 1, 1.2)
     get_logger().warning(f"Attempt {attempt+1}/{MAX_INIT_ATTEMPTS}, will retry in {delay:.1f} seconds...")
     sleep(delay)

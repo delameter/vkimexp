@@ -1,10 +1,10 @@
 /*----------------------------------------------------------------------------*/
 /* vkimexp [VK dialogs exporter] */
-/* (c) 2023 A. Shavykin <0.delameter@gmail.com> */
+/* (c) 2023-2024 A. Shavykin <0.delameter@gmail.com> */
 /*----------------------------------------------------------------------------*/
 
 body {
-    font-family: "Finlandica", sans-serif;
+    font-family: "Finlandica", "Arial", sans-serif;
 }
 a {
     color: #407191;
@@ -13,7 +13,7 @@ a {
 .page_post_thumb_wrap {
     display: inline-block;
     background-size: contain;
-    border: 1px dotted gray;
+    border: 1px dotted #808080;
 }
 li {
     list-style: none;

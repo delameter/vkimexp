@@ -1,6 +1,6 @@
 # ------------------------------------------------------------------------------
 #  vkimexp [VK dialogs exporter]
-#  (c) 2023 A. Shavykin <0.delameter@gmail.com>
+#  (c) 2023-2024 A. Shavykin <0.delameter@gmail.com>
 # ------------------------------------------------------------------------------
 
 import json
@@ -20,6 +20,12 @@ from .common import DownloadError
 
 
 class AttachmentHandler(metaclass=ABCMeta):
+    """
+    Class responsible for attachment processing. If the file has been already
+    downloaded (and is present at the output directory under the same name),
+    it will not be downloaded again, which saves time and bandwidth.
+    """
+
     @classmethod
     @abstractmethod
     def get_type(cls) -> str:
@@ -47,7 +53,7 @@ class AttachmentHandler(metaclass=ABCMeta):
         remote_path = parse_url(url).path
         basename = os.path.basename(remote_path)
         if len(basename) < 10:
-            basename = re.sub(r'[^\d\w]+', '-', remote_path).strip('-')
+            basename = re.sub(r"[^\d\w]+", "-", remote_path).strip("-")
 
         local_abs_path = self._get_out_subdir() / basename
         if local_abs_path.exists():
@@ -62,7 +68,7 @@ class AttachmentHandler(metaclass=ABCMeta):
         if not response.ok:
             raise DownloadError(f"Failed to download {self.get_type()} (HTTP {response.status_code}): {url}")
 
-        with open(local_abs_path, 'wb') as f:
+        with open(local_abs_path, "wb") as f:
             f.write(response.content)
 
         self._ctx.totals.attach_downloaded.increment()
@@ -70,18 +76,23 @@ class AttachmentHandler(metaclass=ABCMeta):
 
 
 class PhotosHandler(AttachmentHandler):
+    """
+    "Photos" are images uploaded by one of the conversation members, whereas "images" are
+    anything else -- attachments in forwarded messages, stickers etc.
+    """
+
     @classmethod
     def get_type(cls) -> str:
-        return 'photo'
+        return "photo"
 
     def prepare(self, soup: BeautifulSoup) -> int:
-        self.prepared = soup.find_all(name='a', attrs={'aria-label': 'фотография'})
+        self.prepared = soup.find_all(name="a", attrs={"aria-label": "фотография"})
         return len(self.prepared)
 
     def handle(self, soup: BeautifulSoup, attachment_event_cb: callable) -> None:
         for idx, a in enumerate(self.prepared):
             try:
-                source_url = self._extract_from_onclick(a['onclick'])
+                source_url = self._extract_from_onclick(a.get("onclick"))
                 if source_url in self.url_to_abs_path_map.keys():
                     source_local_abs_path = self.url_to_abs_path_map[source_url]
                 else:
@@ -95,7 +106,7 @@ class PhotosHandler(AttachmentHandler):
                 continue
 
             try:
-                thumb_url = self._extract_from_style(a['style'])
+                thumb_url = self._extract_from_style(a.get("style"))
                 if thumb_url in self.url_to_abs_path_map.keys():
                     thumb_local_abs_path = self.url_to_abs_path_map[thumb_url]
                 else:
@@ -108,14 +119,16 @@ class PhotosHandler(AttachmentHandler):
                 attachment_event_cb(self, idx, AttachmentEventTypeEnum.FAILED, e)
                 continue
 
-            a['href'] = './' + str(source_local_rel_path)
-            a['style'] =  'display: block; background-size: contain; ' + a['style'].replace(thumb_url, './' + str(thumb_local_rel_path))
-            a['target'] = '_blank'
-            del a['onclick']
+            a["href"] = "./" + str(source_local_rel_path)
+            a["style"] = "display: block; background-size: contain; " + a["style"].replace(
+                thumb_url, "./" + str(thumb_local_rel_path)
+            )
+            a["target"] = "_blank"
+            del a["onclick"]
 
     @classmethod
     def _extract_from_onclick(cls, onclick: str) -> str:
-        jmatch = re.search(r'(?:showPhoto|showManyPhoto.pbind)\(.+?(\{.+\}).*\)', onclick)
+        jmatch = re.search(r"(?:showPhoto|showManyPhoto.pbind)\(.+?(\{.+\}).*\)", onclick)
         if not jmatch:
             raise ValueError(f"Data JSON not found for photo")
         try:
@@ -124,17 +137,23 @@ class PhotosHandler(AttachmentHandler):
             raise ValueError(f"Invalid data JSON for photo: {onclick!r}") from e
 
         maxsize, maxurl = 0, None
-        for sizename, urldef in j['temp'].items():
+        if not (temp := j.get("temp")):
+            raise ValueError(f"Malformed data json for photo: {j!r}")
+
+        for sizename, urldef in temp.items():
             if not isinstance(urldef, list) or not len(urldef) == 3:
                 continue
             if (size := operator.mul(*map(int, urldef[1:3]))) > maxsize:
                 maxsize = size
                 maxurl = urldef[0]
+
+        if not maxurl:
+            raise ValueError(f"No URLs found for photo")
         return maxurl
 
     @classmethod
     def _extract_from_style(cls, style: str) -> str:
-        urlmatch = re.search(r'background-image:\s+url\((.+)\);', style)
+        urlmatch = re.search(r"background-image:\s+url\((.+)\);", style)
         if not urlmatch:
             raise ValueError(f"Thumb URL not found for photo")
         return urlmatch.group(1)
@@ -144,7 +163,7 @@ class PhotosHandler(AttachmentHandler):
         basename = os.path.basename(remote_path)
         if thumb:
             name, ext = os.path.splitext(basename)
-            basename = f'{name}_{ext}'
+            basename = f"{name}_{ext}"
 
         local_abs_path = Path(self._get_out_subdir()) / basename
         if local_abs_path.exists():
@@ -155,7 +174,7 @@ class PhotosHandler(AttachmentHandler):
         if not response.ok:
             raise DownloadError(f"Failed to download photo (HTTP {response.status_code}): {url}")
 
-        with open(local_abs_path, 'wb') as f:
+        with open(local_abs_path, "wb") as f:
             f.write(response.content)
 
         self._ctx.totals.attach_downloaded.increment()
@@ -165,15 +184,15 @@ class PhotosHandler(AttachmentHandler):
 class AudioMsgsHandler(AttachmentHandler):
     @classmethod
     def get_type(self) -> str:
-        return 'audiomsg'
+        return "audiomsg"
 
     def prepare(self, soup: BeautifulSoup) -> int:
-        self.prepared = soup.find_all(name='div', attrs={'class': "audio-msg-track"})
+        self.prepared = soup.find_all(name="div", attrs={"class": "audio-msg-track"})
         return len(self.prepared)
 
     def handle(self, soup: BeautifulSoup, attachment_event_cb: callable) -> None:
         for idx, div in enumerate(self.prepared):
-            data_urls = [div.get('data-mp3'), div.get('data-ogg')]
+            data_urls = [div.get("data-mp3"), div.get("data-ogg")]
             last_error = None
             local_abs_path = None
 
@@ -196,23 +215,30 @@ class AudioMsgsHandler(AttachmentHandler):
                     self.url_to_abs_path_map[url] = local_abs_path
 
                 local_rel_path = local_abs_path.relative_to(self._ctx.out_dir)
-                a = soup.new_tag('a', attrs=dict(href=local_rel_path, target='_blank'))
+                a = soup.new_tag("a", attrs=dict(href=local_rel_path, target="_blank"))
                 a.append(str(local_rel_path))
                 div.append(a)
 
 
 class ImagesHandler(AttachmentHandler):
+    """
+    "Photos" are images uploaded by one of the conversation members, whereas "images" are
+    anything else -- attachments in forwarded messages, stickers etc.
+    """
+
     @classmethod
     def get_type(cls) -> str:
-        return 'image'
+        return "image"
 
     def prepare(self, soup: BeautifulSoup) -> int:
-        self.prepared = soup.find_all(name='img')
+        self.prepared = soup.find_all(name="img")
         return len(self.prepared)
 
     def handle(self, soup: BeautifulSoup, attachment_event_cb: callable) -> None:
-        for idx, img in enumerate(self.prepared):
-            url = img['src']
+        for (idx, img) in enumerate(self.prepared):
+            url = img.get("src")
+            if not url:
+                continue
             try:
                 if url in self.url_to_abs_path_map.keys():
                     local_abs_path = self.url_to_abs_path_map[url]
@@ -223,6 +249,6 @@ class ImagesHandler(AttachmentHandler):
                     self.url_to_abs_path_map[url] = local_abs_path
 
                 local_rel_path = local_abs_path.relative_to(self._ctx.out_dir)
-                img['src'] = './' + str(local_rel_path)
+                img["src"] = "./" + str(local_rel_path)
             except DownloadError as e:
                 attachment_event_cb(self, idx, AttachmentEventTypeEnum.FAILED, e)
